@@ -165,13 +165,22 @@ async function uploadToCloudinary(file) {
     formData.append("file", file);
     formData.append("upload_preset", CLOUDINARY_UPLOAD_PRESET);
 
+    console.log("📤 Uploading to Cloudinary:", url);
+    console.log("☁️ Cloud Name:", CLOUDINARY_CLOUD_NAME);
+    console.log("🔑 Upload Preset:", CLOUDINARY_UPLOAD_PRESET);
+
     const res = await fetch(url, { method: "POST", body: formData });
-    if (!res.ok) {
-        const errorData = await res.json();
-        const msg = errorData.error ? errorData.error.message : "Unknown error";
-        throw new Error("Cloudinary Error: " + msg);
-    }
     const data = await res.json();
+
+    if (!res.ok) {
+        const msg = data.error ? data.error.message : JSON.stringify(data);
+        console.error("❌ Cloudinary Error Response:", data);
+        if (msg.includes("preset")) {
+            throw new Error("⚠️ Upload failed: 'vault_upload' preset is missing or set to Signed. Go to Cloudinary → Settings → Upload → Add Unsigned Preset named 'vault_upload'");
+        }
+        throw new Error("❌ Cloudinary: " + msg);
+    }
+    console.log("✅ Cloudinary upload success:", data.secure_url);
     return data.secure_url;
 }
 
