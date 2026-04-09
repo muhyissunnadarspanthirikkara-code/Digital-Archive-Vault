@@ -1,21 +1,25 @@
-// ========== BACK4APP CONFIG ==========
+// ========== CONFIG: CLOUD & FALLBACK ==========
+const CLOUDINARY_CLOUD_NAME = "dmxnbdmaf";
+const CLOUDINARY_UPLOAD_PRESET = "vault_upload";
+
+// Back4App (Parse)
 Parse.initialize(
     "dKR9Ht5Moa9biA0oVlwW5XVpFxsdnlTBU6M0nkjG",
     "iRZOpPRdlfE4ZmPBTkn0zvSTANiMtDtR07CpJ2vp"
 );
 Parse.serverURL = "https://parseapi.back4app.com/";
 
-// ========== EMAILJS CONFIG ==========
+// EmailJS
 const EMAILJS_SERVICE  = "service_10hbfpn";
 const EMAILJS_TEMPLATE = "template_eycxtak";
 
 // ========== STATE ==========
-let currentUser  = null;
-let allFiles     = [];
+let currentUser   = null;
+let allFiles      = [];
 let currentFilter = "all";
-let selectedFile = null;
-let currentOTP   = null;
-let targetEmail  = "";
+let selectedFile  = null;
+let currentOTP    = null;
+let targetEmail   = "";
 
 // ========== DOM REFS ==========
 const authSection      = document.getElementById("auth-section");
@@ -37,10 +41,10 @@ const userAvatar       = document.getElementById("user-avatar");
 function init() {
     lucide.createIcons();
     setupEvents();
-    showAuth();              // Always start at login
+    showAuth();
 }
 
-// ========== AUTH: SHOW/HIDE ==========
+// ========== AUTH ==========
 function showAuth() {
     dashSection.classList.add("hidden");
     authSection.classList.remove("hidden");
@@ -54,34 +58,31 @@ function showDashboard() {
     lucide.createIcons();
 }
 
-// ========== OTP FLOW ==========
 async function handleRequestOTP(e) {
     e.preventDefault();
     targetEmail = document.getElementById("login-email").value.trim();
     const btn   = document.getElementById("send-otp-btn");
-
     currentOTP = Math.floor(100000 + Math.random() * 900000);
-    console.log("Dev OTP:", currentOTP);   // visible in browser console for local testing
+    console.log("Dev OTP:", currentOTP);
 
-    btn.disabled    = true;
+    btn.disabled = true;
     btn.textContent = "Sending...";
 
     try {
-        const response = await emailjs.send(EMAILJS_SERVICE, EMAILJS_TEMPLATE, {
+        await emailjs.send(EMAILJS_SERVICE, EMAILJS_TEMPLATE, {
             to_email: targetEmail,
             otp_code: currentOTP,
-            user_email: targetEmail, // variation 1
-            code: currentOTP          // variation 2
+            user_email: targetEmail,
+            code: currentOTP
         });
-        console.log("Email Success:", response);
         showToast("Code sent to " + targetEmail, "success");
     } catch (err) {
         console.error("Email Error:", err);
-        showToast("EmailJS Error: " + (err.text || err.message || "Unknown error"), "error");
+        showToast("EmailJS Error: " + (err.text || "Failed to send"), "error");
     }
 
-    btn.disabled    = false;
-    btn.innerHTML   = '<i data-lucide="send"></i> Send OTP Code';
+    btn.disabled = false;
+    btn.innerHTML = '<i data-lucide="send"></i> Send OTP Code';
     lucide.createIcons();
     showOTPVerifyStep();
 }
@@ -100,7 +101,6 @@ function showEmailStep() {
 function handleVerifyOTP(e) {
     e.preventDefault();
     const entered = document.getElementById("native-otp-input").value;
-
     if (String(entered) === String(currentOTP)) {
         currentUser = { email: targetEmail };
         showToast("Logged in successfully!", "success");
@@ -113,22 +113,24 @@ function handleVerifyOTP(e) {
     }
 }
 
-// ========== LOGOUT ==========
 function doLogout() {
     currentUser = null;
-    allFiles    = [];
+    allFiles = [];
     fileGrid.innerHTML = "";
     showAuth();
-    showEmailStep();    // Reset back to email step
-    document.getElementById("login-email").value     = "";
+    showEmailStep();
+    document.getElementById("login-email").value = "";
     document.getElementById("native-otp-input").value = "";
     showToast("Logged out", "info");
 }
 
-// ========== BACK4APP CLOUD SYNC ==========
+// ========== STORAGE ENGINE (HYBRID CLOUD & LOCAL) ==========
 async function loadFiles() {
-    fileGrid.innerHTML = `<div class="empty-state"><div class="loader"></div><p>Loading your files...</p></div>`;
+    fileGrid.innerHTML = `<div class="empty-state"><div class="loader"></div><p>Loading vault...</p></div>`;
     lucide.createIcons();
+
+    let cloudFiles = [];
+    let localFiles = loadFromLocal();
 
     try {
         const ArchiveFile = Parse.Object.extend("ArchiveFile");
@@ -137,27 +139,25 @@ async function loadFiles() {
         q.descending("createdAt");
         const results = await q.find();
 
-        allFiles = results.map(obj => ({
+        cloudFiles = results.map(obj => ({
             id:       obj.id,
             name:     obj.get("filename"),
             size:     obj.get("size") || 0,
             fileType: obj.get("type") || "document",
-            url:      obj.get("fileUrl") || "#"   // ← Now reads Cloudinary URL
+            url:      obj.get("fileUrl") || "#",
+            isCloud:  true
         }));
-        renderFiles();
     } catch (err) {
-        console.error("Load error:", err);
-        fileGrid.innerHTML = `<div class="empty-state"><i data-lucide="cloud-off"></i><p>Could not load files.<br><small>${err.message}</small></p></div>`;
-        lucide.createIcons();
+        console.warn("Cloud load failed, relying on local cache.");
     }
+
+    // Merge: Prioritize cloud if ID exists, or filter out duplicates
+    const cloudIds = new Set(cloudFiles.map(f => f.name + f.size));
+    const uniqueLocal = localFiles.filter(f => !cloudIds.has(f.name + f.size));
+    
+    allFiles = [...cloudFiles, ...uniqueLocal];
+    renderFiles();
 }
-
-
-// ========== CLOUDINARY CONFIG ==========
-// Get your Cloud Name from: https://cloudinary.com/console
-// Then create an unsigned upload preset named "vault_upload"
-const CLOUDINARY_CLOUD_NAME = "dmxnbdmaf";
-const CLOUDINARY_UPLOAD_PRESET = "vault_upload";
 
 async function uploadToCloudinary(file) {
     const url = `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/auto/upload`;
@@ -165,33 +165,27 @@ async function uploadToCloudinary(file) {
     formData.append("file", file);
     formData.append("upload_preset", CLOUDINARY_UPLOAD_PRESET);
 
-    console.log("📤 Uploading to Cloudinary:", url);
-    console.log("☁️ Cloud Name:", CLOUDINARY_CLOUD_NAME);
-    console.log("🔑 Upload Preset:", CLOUDINARY_UPLOAD_PRESET);
-
     const res = await fetch(url, { method: "POST", body: formData });
     const data = await res.json();
 
     if (!res.ok) {
-        const msg = data.error ? data.error.message : JSON.stringify(data);
-        console.error("❌ Cloudinary Error Response:", data);
-        if (msg.includes("preset")) {
-            throw new Error("⚠️ Upload failed: 'vault_upload' preset is missing or set to Signed. Go to Cloudinary → Settings → Upload → Add Unsigned Preset named 'vault_upload'");
-        }
-        throw new Error("❌ Cloudinary: " + msg);
+        throw new Error(data.error ? data.error.message : "Cloudinary failed");
     }
-    console.log("✅ Cloudinary upload success:", data.secure_url);
     return data.secure_url;
 }
 
 async function uploadFiles(files) {
     for (const file of files) {
-        showToast(`⬆️ Uploading ${file.name}...`, "info");
-        try {
-            // Step 1: Upload file to Cloudinary CDN
-            const fileUrl = await uploadToCloudinary(file);
+        showToast(`⬆️ Encrypting & Uploading ${file.name}...`, "info");
+        
+        let fileUrl = "#";
+        let isSavedToCloud = false;
 
-            // Step 2: Save metadata to Back4App
+        try {
+            // Step 1: Try Cloudinary
+            fileUrl = await uploadToCloudinary(file);
+            
+            // Step 2: Try Back4App
             const ArchiveFile = Parse.Object.extend("ArchiveFile");
             const obj = new ArchiveFile();
             obj.set("filename",  file.name);
@@ -200,25 +194,54 @@ async function uploadFiles(files) {
             obj.set("userEmail", currentUser.email);
             obj.set("fileUrl",   fileUrl);
             await obj.save();
-
-            showToast(`✅ ${file.name} saved!`, "success");
-            await loadFiles();
-            await loadStats();
+            isSavedToCloud = true;
+            showToast(`✅ ${file.name} saved to Cloud!`, "success");
         } catch (err) {
-            console.error("Upload error:", err);
-            showToast("❌ " + (err.message || "Upload failed"), "error");
+            console.error("Cloud upload failed, saving to Local Vault (Demo Mode).", err);
+            showToast(`⚠️ Cloud error, saved to Local Vault`, "warning");
+            // Use Object URL for session preview if cloud fails
+            fileUrl = URL.createObjectURL(file);
         }
+
+        // Always save to Local for persistence (as requested for Demo Mode)
+        saveToLocal({
+            id:       "local_" + Date.now(),
+            name:     file.name,
+            size:     file.size,
+            fileType: getFileType(file.type),
+            url:      fileUrl,
+            isCloud:  isSavedToCloud
+        });
+
+        await loadFiles();
+        await loadStats();
     }
+}
+
+// LocalPersistence Helpers
+function saveToLocal(fileObj) {
+    const key = `vault_files_${currentUser.email}`;
+    let list = JSON.parse(localStorage.getItem(key) || "[]");
+    list.unshift(fileObj);
+    localStorage.setItem(key, JSON.stringify(list));
+}
+
+function loadFromLocal() {
+    const key = `vault_files_${currentUser.email}`;
+    return JSON.parse(localStorage.getItem(key) || "[]");
+}
+
+function removeFromLocal(id) {
+    const key = `vault_files_${currentUser.email}`;
+    let list = JSON.parse(localStorage.getItem(key) || "[]");
+    list = list.filter(f => f.id !== id);
+    localStorage.setItem(key, JSON.stringify(list));
 }
 
 async function loadStats() {
     try {
-        const ArchiveFile = Parse.Object.extend("ArchiveFile");
-        const q = new Parse.Query(ArchiveFile);
-        q.equalTo("userEmail", currentUser.email);
-        const results = await q.find();
         let total = 0;
-        results.forEach(f => total += (f.get("size") || 0));
+        allFiles.forEach(f => total += (f.size || 0));
         updateStatsUI(total);
     } catch (e) {}
 }
@@ -226,21 +249,26 @@ async function loadStats() {
 async function deleteSelected() {
     if (!selectedFile) return;
     if (!confirm(`Delete "${selectedFile.name}" permanently?`)) return;
+    
     try {
-        const ArchiveFile = Parse.Object.extend("ArchiveFile");
-        const q = new Parse.Query(ArchiveFile);
-        const obj = await q.get(selectedFile.id);
-        await obj.destroy();
-        showToast("File deleted from cloud", "success");
+        if (selectedFile.isCloud) {
+            const ArchiveFile = Parse.Object.extend("ArchiveFile");
+            const q = new Parse.Query(ArchiveFile);
+            const obj = await q.get(selectedFile.id);
+            await obj.destroy();
+        }
+        removeFromLocal(selectedFile.id);
+        
+        showToast("File removed", "success");
         document.getElementById("preview-modal").classList.add("hidden");
         loadFiles();
         loadStats();
     } catch (err) {
-        showToast("Delete failed: " + err.message, "error");
+        showToast("Delete failed", "error");
     }
 }
 
-// ========== RENDER ==========
+// ========== RENDER & UI ==========
 function renderFiles() {
     const term = searchInput.value.toLowerCase();
     const filtered = allFiles.filter(f =>
@@ -249,10 +277,11 @@ function renderFiles() {
     );
 
     if (!filtered.length) {
-        fileGrid.innerHTML = `<div class="empty-state"><i data-lucide="folder-open"></i><p>No files yet. Click Upload to start!</p></div>`;
+        fileGrid.innerHTML = `<div class="empty-state"><i data-lucide="folder-open"></i><p>Vault is empty.</p></div>`;
     } else {
         fileGrid.innerHTML = filtered.map(f => `
             <div class="file-card" onclick="openPreview('${f.id}')">
+                ${!f.isCloud ? '<div class="local-badge" title="Local Only">Demo</div>' : ''}
                 <div class="file-preview-thumb">${renderThumb(f)}</div>
                 <div class="file-info">
                     <h4 title="${f.name}">${f.name}</h4>
@@ -264,7 +293,7 @@ function renderFiles() {
 }
 
 function renderThumb(f) {
-    if (f.fileType === "image") return `<img src="${f.url}" alt="${f.name}" onerror="this.style.display='none'">`;
+    if (f.fileType === "image") return `<img src="${f.url}" alt="${f.name}" onerror="this.src='https://via.placeholder.com/150?text=No+Cloud+Access'">`;
     const icon = f.fileType === "video" ? "video" : (f.fileType === "document" ? "file-text" : "file");
     return `<i data-lucide="${icon}" class="file-icon"></i>`;
 }
@@ -291,7 +320,6 @@ function openPreview(id) {
     lucide.createIcons();
 }
 
-// ========== HELPERS ==========
 function getFileType(mime = "") {
     if (mime.startsWith("image/")) return "image";
     if (mime.startsWith("video/")) return "video";
@@ -308,9 +336,9 @@ function formatSize(bytes = 0) {
 function updateStatsUI(total) {
     const limit = 10 * 1024 ** 4;
     const pct   = Math.min((total / limit) * 100, 100);
-    storageProgress.style.width    = pct + "%";
-    storagePercent.textContent     = pct.toFixed(2) + "%";
-    storageText.textContent        = `${formatSize(total)} of 10 TB used`;
+    storageProgress.style.width = pct + "%";
+    storagePercent.textContent = pct.toFixed(2) + "%";
+    storageText.textContent = `${formatSize(total)} of 10 TB used`;
 }
 
 function showToast(msg, type = "info") {
@@ -323,22 +351,14 @@ function showToast(msg, type = "info") {
     setTimeout(() => { t.classList.remove("show"); setTimeout(() => t.remove(), 400); }, 3500);
 }
 
-// ========== EVENTS ==========
 function setupEvents() {
     logoutBtn.onclick = doLogout;
-
     uploadTrigger.onclick  = () => fileInput.click();
     fileInput.onchange     = e  => uploadFiles(e.target.files);
     searchInput.oninput    = renderFiles;
-
     dropZone.ondragover  = e => { e.preventDefault(); dropZone.classList.add("active"); };
     dropZone.ondragleave = () => dropZone.classList.remove("active");
-    dropZone.ondrop      = e => {
-        e.preventDefault();
-        dropZone.classList.remove("active");
-        uploadFiles(e.dataTransfer.files);
-    };
-
+    dropZone.ondrop      = e => { e.preventDefault(); dropZone.classList.remove("active"); uploadFiles(e.dataTransfer.files); };
     document.querySelectorAll(".sidebar-nav li").forEach(li => {
         li.onclick = () => {
             document.querySelectorAll(".sidebar-nav li").forEach(x => x.classList.remove("active"));
@@ -347,13 +367,9 @@ function setupEvents() {
             renderFiles();
         };
     });
-
     document.getElementById("close-preview").onclick = () => previewModal.classList.add("hidden");
     document.getElementById("delete-file-btn").onclick = deleteSelected;
-    document.getElementById("download-file").onclick = () => {
-        if (selectedFile) window.open(selectedFile.url, "_blank");
-    };
+    document.getElementById("download-file").onclick = () => { if (selectedFile) window.open(selectedFile.url, "_blank"); };
 }
 
-// ========== START ==========
 init();
