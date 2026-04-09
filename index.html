@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Digital Archive Vault | Secure Cloud Storage</title>
+    <meta name="description" content="Securely store and access your photos, videos, and documents from any device.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+    <!-- Back4App (Parse SDK) -->
+    <script type="text/javascript" src="https://npmcdn.com/parse/dist/parse.min.js"></script>
+    <!-- EmailJS -->
+    <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js"></script>
+    <script type="text/javascript">
+       (function(){
+          emailjs.init("na4VcBmtX4BeCAaOd");
+       })();
+    </script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <link rel="stylesheet" href="style.css">
+</head>
+<body class="dark-theme">
+    <div id="app">
+
+        <!-- ========== AUTH SCREEN ========== -->
+        <section id="auth-section">
+            <div class="auth-container">
+                <div class="auth-card">
+                    <!-- Logo -->
+                    <div class="auth-header">
+                        <div class="logo">
+                            <i data-lucide="shield-check" class="logo-icon"></i>
+                            <h1>Digital Archive Vault</h1>
+                        </div>
+                        <p class="tagline">Your files. Secured. Everywhere.</p>
+                    </div>
+
+                    <!-- Step 1: Email Input -->
+                    <div id="login-form-container">
+                        <form id="login-form" class="form-group" onsubmit="handleRequestOTP(event)">
+                            <div class="input-wrapper">
+                                <i data-lucide="mail"></i>
+                                <input type="email" id="login-email" placeholder="Enter your Gmail" autocomplete="email" required>
+                            </div>
+                            <p style="font-size:0.78rem;color:#a0a0a0;margin-bottom:1rem;text-align:center;">A 6-digit code will be sent to your email.</p>
+                            <button type="submit" class="btn-primary" id="send-otp-btn">
+                                <i data-lucide="send"></i> Send OTP Code
+                            </button>
+                        </form>
+                    </div>
+
+                    <!-- Step 2: OTP Verify (hidden) -->
+                    <div id="otp-verify-container" class="hidden">
+                        <form id="otp-form" class="form-group" onsubmit="handleVerifyOTP(event)">
+                            <p style="text-align:center;color:#a0a0a0;font-size:0.85rem;margin-bottom:1.5rem;">
+                                Enter the code sent to<br>
+                                <b id="display-otp-email" style="color:white;"></b>
+                            </p>
+                            <input type="number" id="native-otp-input" class="otp-box-large" placeholder="000000" maxlength="6" required>
+                            <button type="submit" class="btn-primary">Verify &amp; Login</button>
+                        </form>
+                        <p class="auth-footer"><a href="#" onclick="showEmailStep()">← Change Email</a></p>
+                    </div>
+
+                    <!-- Security badge -->
+                    <div class="auth-security-note">
+                        <i data-lucide="lock" style="width:14px;height:14px;"></i>
+                        <span>End-to-end encrypted · Cross-device sync</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ========== DASHBOARD ========== -->
+        <section id="dashboard-section" class="hidden">
+            <aside class="sidebar">
+                <div class="sidebar-header">
+                    <div class="logo">
+                        <i data-lucide="shield-check"></i>
+                        <span>Vault</span>
+                    </div>
+                </div>
+
+                <nav class="sidebar-nav">
+                    <ul>
+                        <li class="active" data-filter="all">
+                            <i data-lucide="layout-grid"></i><span>All Files</span>
+                        </li>
+                        <li data-filter="image">
+                            <i data-lucide="image"></i><span>Photos</span>
+                        </li>
+                        <li data-filter="video">
+                            <i data-lucide="video"></i><span>Videos</span>
+                        </li>
+                        <li data-filter="document">
+                            <i data-lucide="file-text"></i><span>Documents</span>
+                        </li>
+                        <li data-filter="other">
+                            <i data-lucide="more-horizontal"></i><span>Others</span>
+                        </li>
+                    </ul>
+                </nav>
+
+                <div class="storage-stats">
+                    <div class="stats-header">
+                        <span>Storage Used</span>
+                        <span id="storage-percentage">0%</span>
+                    </div>
+                    <div class="progress-bar">
+                        <div id="storage-progress" class="progress" style="width:0%"></div>
+                    </div>
+                    <p id="storage-text">0 MB of 10 TB used</p>
+                </div>
+
+                <!-- Sidebar User + Logout -->
+                <div class="user-profile">
+                    <div class="user-info">
+                        <div class="avatar" id="user-avatar">?</div>
+                        <span id="user-email-display">user@example.com</span>
+                    </div>
+                    <button id="logout-btn" title="Logout">
+                        <i data-lucide="log-out"></i>
+                    </button>
+                </div>
+            </aside>
+
+            <main class="main-content">
+                <header class="top-bar">
+                    <div class="search-container">
+                        <i data-lucide="search"></i>
+                        <input type="text" id="search-input" placeholder="Search your archive...">
+                    </div>
+                    <div class="security-banner">
+                        <i data-lucide="shield-check"></i>
+                        <span>Your photos, videos &amp; documents are always safe with us.</span>
+                    </div>
+                    <div class="actions">
+                        <button id="upload-trigger" class="btn-icon">
+                            <i data-lucide="plus"></i><span>Upload</span>
+                        </button>
+                        <input type="file" id="file-input" multiple class="hidden">
+                    </div>
+                </header>
+
+                <div class="content-body">
+                    <div id="drop-zone" class="drop-zone">
+                        <div class="drop-zone-content">
+                            <i data-lucide="upload-cloud"></i>
+                            <p>Drag and drop files here or click Upload</p>
+                        </div>
+                    </div>
+                    <div id="file-grid" class="file-grid"></div>
+                </div>
+            </main>
+        </section>
+
+        <!-- Preview Modal -->
+        <div id="preview-modal" class="modal hidden">
+            <div class="modal-overlay"></div>
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 id="preview-filename">File Name</h3>
+                    <button id="close-preview" class="btn-close"><i data-lucide="x"></i></button>
+                </div>
+                <div id="preview-body" class="modal-body"></div>
+                <div class="modal-footer">
+                    <button id="download-file" class="btn-secondary">
+                        <i data-lucide="download"></i> Download
+                    </button>
+                    <button id="delete-file-btn" class="btn-danger">
+                        <i data-lucide="trash-2"></i> Delete
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Toast Notifications -->
+        <div id="toast-container"></div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
