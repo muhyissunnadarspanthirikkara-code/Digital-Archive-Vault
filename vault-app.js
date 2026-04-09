@@ -197,8 +197,9 @@ async function uploadFiles(files) {
             isSavedToCloud = true;
             showToast(`✅ ${file.name} saved to Cloud!`, "success");
         } catch (err) {
-            console.error("Cloud upload failed, saving to Local Vault (Demo Mode).", err);
-            showToast(`⚠️ Cloud error, saved to Local Vault`, "warning");
+            console.error("Cloud upload failed:", err);
+            showToast(`❌ Cloud failed: ${err.message || "Error"}`, "error");
+            showToast(`⚠️ Saved to Local (Session only)`, "warning");
             // Use Object URL for session preview if cloud fails
             fileUrl = URL.createObjectURL(file);
         }
